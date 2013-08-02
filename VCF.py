@@ -2,14 +2,10 @@
 # encoding: utf-8
 
 import re
-import sys
 import gzip
 import pysam
-import argparse
 import itertools
 import mimetypes
-import copy
-from pypgen.misc import helpers
 from pypgen.fstats import fstats
 from collections import OrderedDict, defaultdict
 
@@ -30,7 +26,6 @@ class VCF(object):
 
         if self.overlap is None:
             self.overlap = self.window_size
-
 
     def __open_vcf__(self):
         """Open vcf file as gzip or as text."""
@@ -60,7 +55,6 @@ class VCF(object):
                     chrms_sizes_dict[chrm_name] = chrm_length
 
         return chrms_sizes_dict
-
 
     def make_empty_vcf_ordered_dict(self):
         """Open VCF file and read in header line as Ordered Dict"""
