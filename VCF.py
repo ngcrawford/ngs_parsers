@@ -156,6 +156,13 @@ class VCF(object):
         else:
             return tuple(row for row in vcf_slice)
 
+    def vcf_file_iterator(self):
+        for line in self.__open_vcf__():
+            if line.startswith("#") is not True:
+                yield line
+            else:
+                continue
+
     def parse_info_field(self, info_field):
 
         info_dict = {}
