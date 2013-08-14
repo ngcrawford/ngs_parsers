@@ -2,6 +2,7 @@
 # encoding: utf-8
 
 import re
+import sys
 import gzip
 import pysam
 import itertools
@@ -12,20 +13,18 @@ from collections import OrderedDict, defaultdict
 
 class VCF(object):
     """docstring for VCF"""
-    def __init__(self, input, output, overlap, populations, region, window_size):
+    def __init__(self, input, output, populations, region, window_size=1, step=0):
         super(VCF, self).__init__()
 
         self.input = input
         self.output = output
-        self.overlap = overlap
+        self.step = step
         self.populations = populations
-        self.regions = region
+        self.region = region
         self.window_size = window_size
         self.chrms_2_sizes = self._get_chrm_ids_and_sizes_()
         self.empty_vcf_line = self.make_empty_vcf_ordered_dict()
 
-        if self.overlap is None:
-            self.overlap = self.window_size
 
     def __open_vcf__(self):
         """Open vcf file as gzip or as text."""
@@ -40,7 +39,7 @@ class VCF(object):
         """ Extract chromosome ids and sizes from vcf file.
             Return as dictionary"""
 
-        chrms_sizes_dict = {}
+        chrms_sizes_dict = OrderedDict()
         with self.__open_vcf__() as fin:
 
             for line in fin:
@@ -53,11 +52,12 @@ class VCF(object):
                     chrm_length = int(chrm_length[0].strip('length=').strip('>'))
 
                     chrms_sizes_dict[chrm_name] = chrm_length
+                    break
 
         return chrms_sizes_dict
 
     def make_empty_vcf_ordered_dict(self):
-        """Open VCF file and read in header line as Ordered Dict"""
+        """Open VCF file and read in #CHROM line as an Ordered Dict"""
 
         header_dict = None
         with self.__open_vcf__() as fin:
@@ -104,46 +104,6 @@ class VCF(object):
 
         return results
 
-
-
-    def generate_slices(self):
-        """Given dict of chromosomes and sequence sizes generate list of slice positions
-        for each chromosome
-
-            Allows for overlapping slices.
-
-        """
-
-        chrm_2_windows = self.chrms_2_sizes.fromkeys(self.chrms_2_sizes.keys(), None)
-
-        for count, chrm in enumerate(self.chrms_2_sizes.keys()):
-
-            length = self.chrms_2_sizes[chrm]
-            window_size = self.window_size
-            overlap = self.overlap
-
-            # Skip contigs that are to short
-            if length <= window_size: continue
-
-            # Fit windows into remaining space
-            if (length % window_size) > overlap:
-                start = (length % window_size) / 2
-                stop = (length - window_size) - (overlap / 2)
-
-            # Prevent windows from invading remaining space 
-            if (length % window_size) <= overlap:
-                start = (length % window_size) / 2
-                stop = length - (overlap * 2)
-
-            starts = range(start, stop, overlap)
-            stops = [i+window_size for i in starts]
-            windows = zip(starts, stops)
-
-            chrm_2_windows[chrm] = windows
-
-        return chrm_2_windows
-
-
     def slice_vcf(self, vcf_bgzipped_file, chrm, start, stop):
 
         tbx = pysam.Tabixfile(vcf_bgzipped_file)
@@ -170,6 +130,7 @@ class VCF(object):
             pair = item.split("=")
             if len(pair) == 2:
                 info_dict[pair[0]] = pair[1]   # this could be improved on
+
         return info_dict
 
 
@@ -213,10 +174,98 @@ class VCF(object):
         vcf_line_dict = self.empty_vcf_line.copy()
         return [self.parse_vcf_line(line, vcf_line_dict) for line in chunk]
 
+    def get_chromosome_lengths(self, regions_to_skip=[]):
+
+        try:
+            tbx = pysam.Tabixfile(self.input)  # TODO: create try statement to test that file is actually a VCF
+        except:
+            print 'Input not Tabix Indexed.'
+            sys.exit()
+
+        # PARSE LENGTH INFO FROM HEADER
+
+        chrm_lengths = []
+        chrm_lengths_dict = {}
+        for line in tbx.header:
+
+            if line.startswith("##contig="):
+
+                chrm_name = re.findall(r'ID=.*,', line)
+                chrm_name = chrm_name[0].strip('ID=').strip(',')
+
+                chrm_length = re.findall(r'length=.*>', line)
+                chrm_length = int(chrm_length[0].strip('length=').strip('>'))
+
+                if chrm_name in regions_to_skip:
+                    print 'skipping', chrm_name
+                    continue
+
+                chrm_lengths.append((chrm_name, 1, chrm_length))
+                chrm_lengths_dict[chrm_name] = chrm_length
+
+        chrm_lengths = tuple(chrm_lengths)
+        tbx.close()
+
+        return chrm_lengths_dict
 
 
+    def get_slice_indicies(self):
 
+        """Get slice information from VCF file that is tabix indexed file (bgzipped). """
 
+        # GENERATE SLICES
+        # current does not make overlapping slices.
+        # Does not yield final partial slice. Not a bug!
+
+        if self.region == [None]:
+
+            # ITERATE OVER CHROSOMES (USE ORDERED DICT TO KEEP IN VCF ORDER)
+            for chrm, length in self.chrms_2_sizes.iteritems():
+
+                cStart = 0
+                cStop = 0
+                iCount = 0
+
+                while cStop < length:
+
+                    if iCount == 0:
+                        cStart = 1
+                        cStop = self.window_size
+                        iCount += 1
+
+                    yield (chrm, cStart, cStop)
+                    cStart += self.step
+                    cStop += self.step
+
+        else:
+
+            chrm, start, stop = self.region
+
+            cStart = 0
+            cStop = 0
+            iCount = 0
+
+            if self.window_size == None:
+                self.window_size = 1
+
+            if self.step == None:
+                self.step = 0
+
+            while cStop < stop:
+
+                if iCount == 0:
+                    cStart = start
+                    cStop = start + self.window_size - 1
+                    iCount += 1
+
+                yield (chrm, cStart, cStop)
+
+                if self.step == 0:
+                    cStart += self.window_size
+                else:
+                    cStart += self.step
+
+                cStop = cStart + self.window_size + self.step - 1
 
 
 def process_snp_call(snp_call, ref, alt, IUPAC_ambiguities=False):
@@ -323,64 +372,6 @@ def pairwise(iterable):
     a, b = itertools.tee(iterable)
     next(b, None)
     return itertools.izip(a, b)
-
-
-def get_slice_indicies(vcf_bgzipped_file, regions, window_size, regions_to_skip=[]):
-    """Get slice information from VCF file that is tabix indexed file (bgzipped). """
-
-    # READ IN FILE HEADER
-    tbx = pysam.Tabixfile(vcf_bgzipped_file)  # TODO: create try statement to test that file is actually a VCF
-
-    # PARSE LENGTH INFO FROM HEADER
-
-    chrm_lengths = []
-    chrm_lengths_dict = {}
-    for line in tbx.header:
-
-        if line.startswith("##contig="):
-
-            chrm_name = re.findall(r'ID=.*,', line)
-            chrm_name = chrm_name[0].strip('ID=').strip(',')
-
-            chrm_length = re.findall(r'length=.*>', line)
-            chrm_length = int(chrm_length[0].strip('length=').strip('>'))
-
-            if chrm_name in regions_to_skip:
-                print 'skipping', chrm_name
-                continue
-
-            chrm_lengths.append((chrm_name, 1, chrm_length))
-            chrm_lengths_dict[chrm_name] = chrm_length
-
-    chrm_lengths = tuple(chrm_lengths)
-    tbx.close()
-
-    # GENERATE SLICES
-    # current does not make overlapping slices.
-
-    if regions == None:
-
-        for chrm, start, stop in chrm_lengths:
-
-            slice_indicies = itertools.islice(xrange(start, stop + 1), 0, stop + 1, window_size)
-
-            for count, s in enumerate(pairwise(slice_indicies)):
-                yield (chrm, s[0], s[1] - 1)  # subtract one to prevent 1 bp overlap
-    else:
-        for r in regions:
-            split_region = re.split(r':|-', r)
-
-            if len(split_region) == 3:
-                chrm, start, stop = split_region
-            else:
-                chrm = split_region[0]
-                start, stop = 1, chrm_lengths_dict[chrm]
-
-            start, stop = int(start), int(stop)
-
-            slice_indicies = itertools.islice(xrange(start, stop + 1), 0, stop + 1, window_size)
-            for count, s in enumerate(pairwise(slice_indicies)):
-                yield (chrm, s[0], s[1] - 1)   # subtract one to prevent 1 bp overlap
 
 
 def slice_vcf(vcf_bgzipped_file, chrm, start, stop):
