@@ -13,7 +13,7 @@ from collections import OrderedDict, defaultdict
 
 class VCF(object):
     """docstring for VCF"""
-    def __init__(self, input, output, populations, region, window_size=1, step=0):
+    def __init__(self, input, output=None, populations=None, region=None, window_size=1, step=0):
         super(VCF, self).__init__()
 
         self.input = input
@@ -52,6 +52,9 @@ class VCF(object):
                     chrm_length = int(chrm_length[0].strip('length=').strip('>'))
 
                     chrms_sizes_dict[chrm_name] = chrm_length
+                    break
+
+                if line.startswith("#CHROM") is True:
                     break
 
         return chrms_sizes_dict
@@ -111,7 +114,7 @@ class VCF(object):
         try:
             vcf_slice = tbx.fetch(chrm, start, stop)
         except ValueError:
-            return None
+            return ()
 
         else:
             return tuple(row for row in vcf_slice)
@@ -133,6 +136,21 @@ class VCF(object):
 
         return info_dict
 
+    def get_population_sizes(self, vcfline, populations):
+
+        sample_counts = {}
+
+        for pop in populations.keys():
+            sample_count = 0
+
+            for sample in populations[pop]:
+                if vcfline[sample] is not None:
+                    sample_count += 1
+
+            sample_counts[pop] = sample_count
+
+        return sample_counts
+
 
     def parse_vcf_line(self, pos, vcf_line_dict):
         """Read in VCF line and convert it to an OrderedDict"""
@@ -152,20 +170,29 @@ class VCF(object):
                     vcf_line_dict[item] = None
 
                 else:
-                    genotype = dict(zip(sample_format,genotype.split(":")))
+                    genotype = dict(zip(sample_format, genotype.split(":")))
 
                     # CONVERT STRINGS TO APPOPRIATE TYPES (INTS, FLOATS, ETC.)
-                    genotype['GQ'] = float(genotype['GQ'])
-                    genotype['DP'] = int(genotype['DP'])
-                    genotype['AD'] = tuple(int(ad) for ad in genotype['AD'].split(","))
-                    genotype['PL'] = tuple(int(ad) for ad in genotype['PL'].split(","))
+                    if genotype.has_key("GQ"):
+                        genotype['GQ'] = float(genotype['GQ'])
+                    if genotype.has_key("DP"):
+                        genotype['DP'] = int(genotype['DP'])
+                    if genotype.has_key("AD"):
+                        genotype['AD'] = tuple(int(ad) for ad in genotype['AD'].split(","))
+                    if genotype.has_key("PL"):
+                        genotype['PL'] = tuple(int(ad) for ad in genotype['PL'].split(","))
 
                     vcf_line_dict[item] = genotype
 
         vcf_line_dict['POS'] = int(vcf_line_dict['POS'])
-        vcf_line_dict['QUAL'] = float(vcf_line_dict['QUAL'])
+
+        try:
+            vcf_line_dict['QUAL'] = float(vcf_line_dict['QUAL'])
+        except ValueError:
+            pass
 
         vcf_line_dict['INFO'] = parse_info_field(vcf_line_dict['INFO'])
+
         return vcf_line_dict.copy()
 
 
@@ -417,42 +444,6 @@ def parse_info_field(info_field):
         if len(pair) == 2:
             info_dict[pair[0]] = pair[1]   # this could be improved on
     return info_dict
-
-
-def parse_vcf_line(pos, vcf_line_dict):
-    """Read in VCF line and convert it to an OrderedDict"""
-
-    pos_parts = pos.strip().split()
-
-    for count, item in enumerate(vcf_line_dict):
-        vcf_line_dict[item] = pos_parts[count]
-
-    sample_format = vcf_line_dict["FORMAT"].split(":")
-
-    for count, item in enumerate(vcf_line_dict):
-        if count >= 9:
-            genotype = vcf_line_dict[item]
-
-            if  "./." in genotype or genotype == ".":      # "'./.'' for dip, '.' for haploid
-                vcf_line_dict[item] = None
-
-            else:
-                genotype = dict(zip(sample_format,genotype.split(":")))
-
-                # CONVERT STRINGS TO APPOPRIATE TYPES (INTS, FLOATS, ETC.)
-                genotype['GQ'] = float(genotype['GQ'])
-                genotype['DP'] = int(genotype['DP'])
-                genotype['AD'] = tuple(int(ad) for ad in genotype['AD'].split(","))
-                genotype['PL'] = tuple(int(ad) for ad in genotype['PL'].split(","))
-
-                vcf_line_dict[item] = genotype
-
-    vcf_line_dict['POS'] = int(vcf_line_dict['POS'])
-    vcf_line_dict['QUAL'] = float(vcf_line_dict['QUAL'])
-
-    vcf_line_dict['INFO'] = parse_info_field(vcf_line_dict['INFO'])
-
-    return vcf_line_dict
 
 
 def get_population_sizes(vcfline, populations):
