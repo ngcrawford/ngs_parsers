@@ -13,7 +13,7 @@ from collections import OrderedDict, defaultdict
 
 class VCF(object):
     """docstring for VCF"""
-    def __init__(self, input, output, populations, region, window_size=1, step=0):
+    def __init__(self, input, output=None, populations=None, region=None, window_size=1, step=0):
         super(VCF, self).__init__()
 
         self.input = input
@@ -114,7 +114,7 @@ class VCF(object):
         try:
             vcf_slice = tbx.fetch(chrm, start, stop)
         except ValueError:
-            return None
+            return ()
 
         else:
             return tuple(row for row in vcf_slice)
@@ -422,8 +422,6 @@ def parse_info_field(info_field):
         if len(pair) == 2:
             info_dict[pair[0]] = pair[1]   # this could be improved on
     return info_dict
-
-
 
 
 def get_population_sizes(vcfline, populations):
