@@ -72,10 +72,10 @@ class VCF(object):
 
     def process_snp(self, snp_call):
         if snp_call == "0/0":
-            return (2,0)
+            return (0,0)
 
         elif snp_call == "1/1":
-            return (0,2)
+            return (1,1)
 
         elif snp_call == '1/0' or \
                snp_call == '0/1':
@@ -83,7 +83,7 @@ class VCF(object):
 
         # skip multiallelic sites
         else:
-            return (0,0)
+            return None
 
     def count_alleles(self, chunk):
 
@@ -208,7 +208,6 @@ class VCF(object):
 
         return chrm_lengths_dict
 
-
     def get_slice_indicies(self):
 
         """Get slice information from VCF file that is tabix indexed file (bgzipped). """
@@ -219,7 +218,7 @@ class VCF(object):
 
         if self.region == [None]:
 
-            # ITERATE OVER CHROSOMES (USE ORDERED DICT TO KEEP IN VCF ORDER)
+            # ITERATE OVER CHROMOSOMES (USE ORDERED DICT TO KEEP IN VCF ORDER)
             for chrm, length in self.chrms_2_sizes.iteritems():
 
                 cStart = 0
@@ -246,7 +245,7 @@ class VCF(object):
             iCount = 0
 
             if self.window_size == None:
-                self.window_size = 1
+                self.window_size = stop - start
 
             if self.step == None:
                 self.step = 0
@@ -266,6 +265,29 @@ class VCF(object):
                     cStart += self.step
 
                 cStop = cStart + self.window_size + self.step - 1
+
+    def calc_allele_counts(self, vcf_line_dict):
+
+        #allele_counts = defaultdict({0:0.0,1:0.0,2:0.0,3:0.0,4:0.0})
+        allele_counts = dict((key, {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}) for key in self.populations.keys())
+
+        for population in self.populations.keys():
+            for sample_id in self.populations[population]:
+
+                if vcf_line_dict[sample_id] != None:
+
+                    genotype = vcf_line_dict[sample_id]
+                    genotype = genotype["GT"].split("/")   # TODO add phased logic
+
+                    if genotype == [".", "."]:
+                        continue
+
+                    genotype = [int(item) for item in genotype]
+
+                    for allele in genotype:
+                        allele_counts[population][allele] += 1.0
+
+        return allele_counts
 
 
 def process_snp_call(snp_call, ref, alt, IUPAC_ambiguities=False):
@@ -491,190 +513,6 @@ def format_output(chrm, start, stop, depth, stat_id, multilocus_f_statistics):
     return (line)
 
 
-def calc_allele_counts(populations, vcf_line_dict):
-
-    #allele_counts = defaultdict({0:0.0,1:0.0,2:0.0,3:0.0,4:0.0})
-    allele_counts = dict((key, {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}) for key in populations.keys())
-
-    for population in populations.keys():
-        for sample_id in populations[population]:
-
-            if vcf_line_dict[sample_id] != None:
-
-                genotype = vcf_line_dict[sample_id]
-                genotype = genotype["GT"].split("/")   # TODO add phased logic
-
-                if genotype == [".", "."]:
-                    continue
-
-                genotype = [int(item) for item in genotype]
-
-                for allele in genotype:
-                    allele_counts[population][allele] += 1.0
-
-    return allele_counts
-
-def calc_fstats(allele_counts):
-
-    # CALCULATE ALLELE FREQUENCIES
-    #allele_freqs_dict = populations.fromkeys(populations.keys(), None)
-    allele_freqs_dict = defaultdict(None)
-    populations = allele_counts.keys()
-
-    for population in allele_counts.keys():
-        counts = allele_counts[population].values()
-
-        if sum(counts) == 0.0:
-            freqs = [0.0] * 4
-
-        else:
-            freqs = [count / sum(counts) for count in counts]
-
-        allele_freqs_dict[population] = freqs
-
-    allele_freqs = allele_freqs_dict.values()
-
-    # CACULATE PAIRWISE F-STATISTICS
-    pairwise_results = {}
-
-    for population_pair in itertools.combinations(populations, 2):
-
-        pop1, pop2 = population_pair
-        Ns = [sum(allele_counts[pop].values()) for pop in [pop1, pop2]]
-
-        if 0 in Ns:
-            values = [float('NaN')] * 6
-            values_dict = dict(zip(['Hs_est', 'Ht_est', 'Gst_est',
-                                    'G_prime_st_est', 'G_double_prime_st_est',
-                                    'D_est'],
-                                    values))
-            pairwise_results[population_pair] = values_dict
-            continue
-
-        else:
-
-            pop1 = allele_freqs_dict[pop1]
-            pop2 = allele_freqs_dict[pop2]
-
-            allele_freqs = [pop1, pop2]
-
-            n = float(len(Ns))
-            Ns_harm = fstats.harmonic_mean(Ns)
-
-            # CALCULATE Hs AND Ht
-            n = 2
-            Hs_prime_est_ = fstats.Hs_prime_est(allele_freqs, n)
-            Ht_prime_est_ = fstats.Ht_prime_est(allele_freqs, n)
-            Hs_est_ = fstats.Hs_est(Hs_prime_est_, Ns_harm)
-            Ht_est_ = fstats.Ht_est(Ht_prime_est_, Hs_est_, Ns_harm, n)
-
-            # CALCULATE F-STATISTICS
-            Gst_est_ = fstats.Gst_est(Ht_est_, Hs_est_)
-            G_prime_st_est_ = fstats.G_prime_st_est(Ht_est_, Hs_est_, Gst_est_, n)
-            G_double_prime_st_est_ = fstats.G_double_prime_st_est(Ht_est_, Hs_est_, n)
-            D_est_ = fstats.D_est(Ht_est_, Hs_est_, n)
-
-            # FORMAT
-            values = [Hs_est_, Ht_est_, Gst_est_, G_prime_st_est_,
-                      G_double_prime_st_est_, D_est_]
-            values_dict = dict(zip(['Hs_est', 'Ht_est', 'Gst_est', \
-                                    'G_prime_st_est', 'G_double_prime_st_est',
-                                    'D_est'],
-                                    values))
-
-            pairwise_results[population_pair] = values_dict
-
-    return pairwise_results
-
-
-def calc_multilocus_f_statistics(Hs_est_dict, Ht_est_dict):
-
-    multilocus_f_statistics = {}
-
-    for key in Hs_est_dict.keys():
-
-        Hs_est_list = Hs_est_dict[key]
-        Ht_est_list = Ht_est_dict[key]
-
-        pairs = zip(Hs_est_list, Ht_est_list)
-        pairs = [pair for pair in pairs if float('NaN') not in pair]
-
-        multilocus_f_statistics[key] = None
-
-        if len(pairs) != 0:
-
-            # THIS REMOVES NaNs FROM THE Ht and Hs LISTS
-            Ht_est_list_no_NaN = fstats.de_NaN_list(Ht_est_list)
-            Hs_est_list_no_NaN = fstats.de_NaN_list(Hs_est_list)
-
-            n = 2  # Assumes pairs = paired population
-            Gst_est = fstats.multilocus_Gst_est(Ht_est_list_no_NaN, Hs_est_list_no_NaN)
-            G_prime_st_est = fstats.multilocus_G_prime_st_est(Ht_est_list_no_NaN, Hs_est_list_no_NaN, n)
-            G_double_prime_st_est = fstats.multilocus_G_double_prime_st_est(Ht_est_list_no_NaN, Hs_est_list_no_NaN, n)
-
-            # NOTE that the Dest calculation handles NaN's better and
-            # can use the raw Hs and Ht calls
-            D_est = fstats.multilocus_D_est(Ht_est_list, Hs_est_list, n)
-
-            values_dict = {}
-            pairs = zip(['Gst_est', 'G_prime_st_est', 'G_double_prime_st_est', 'D_est'],\
-                        [Gst_est, G_prime_st_est, G_double_prime_st_est, D_est])
-
-            for i, p in pairs:
-                values_dict[i] = p[0]
-                values_dict[i + '.stdev'] = p[1]
-
-            multilocus_f_statistics[key] = values_dict
-
-    return multilocus_f_statistics
-
-
-def update_Hs_and_Ht_dicts(f_statistics, Hs_est_dict, Ht_est_dict):
-
-    for pop_pair in f_statistics.keys():
-
-        if Hs_est_dict.has_key(pop_pair) == True:
-            Hs_est_dict[pop_pair].append(f_statistics[pop_pair]['Hs_est'])
-        else:
-            Hs_est_dict[pop_pair] = [f_statistics[pop_pair]['Hs_est']]
-
-        if Ht_est_dict.has_key(pop_pair) == True:
-            Ht_est_dict[pop_pair].append(f_statistics[pop_pair]['Ht_est'])
-        else:
-            Ht_est_dict[pop_pair] = [f_statistics[pop_pair]['Ht_est']]
-
-    return (Hs_est_dict, Ht_est_dict)
-
-
-def f_statistics_2_sorted_list(multilocus_f_statistics, order=[]):
-
-    if len(order) == 0:
-
-        for pair in multilocus_f_statistics.keys():
-            joined_pair = '.'.join(pair)
-            for stat in multilocus_f_statistics[pair].keys():
-                order.append('.'.join((joined_pair, stat)))
-
-        order.sort()
-
-    stats = []
-    for key in order:
-        key_parts = key.split(".")
-
-        if len(key_parts) == 3:
-            pop1, pop2, stat = key_parts
-        else:
-            pop1, pop2, stat, info = key_parts
-
-        if multilocus_f_statistics[(pop1, pop2)] == None:                # TO DO: figure out why this occurs
-            stats.append(float('NaN'))
-        else:
-            value = multilocus_f_statistics[(pop1, pop2)][stat]
-            stats.append(value)
-
-    return (stats, order)
-
-
 def process_header(tabix_file):
 
     chrm_lenghts_dict = {}
@@ -688,44 +526,6 @@ def process_header(tabix_file):
             chrm_lenghts_dict[chrm] = length
 
     return chrm_lenghts_dict
-
-
-def generate_fstats_from_vcf_slices(slice_indicies, populations, header, args):
-
-    for count, si in enumerate(slice_indicies):
-        chrm, start, stop = si
-
-        yield [slice_vcf(args.input, chrm, start, stop),
-               chrm, start, stop, populations, header,
-               args.min_samples]
-
-
-def process_outgroup(vcf_line, populations):
-    og = populations["Outgroup"]
-
-    # Create list of outgroup genotypes
-    gt = []
-    for s in og:
-        if vcf_line[s] != None:
-            gt.append(vcf_line[s]["GT"])
-
-    # Get unique genotypes and only return
-    # genotypic information if the genotype is
-    # homozygous for both samples with
-
-    gt = set(gt)
-    if len(gt) == 1:
-        gt = tuple(gt)[0]
-        gt = set(re.split(r"/|\|", gt))   # split on "/" or "|"
-
-        if len(gt) == 1:
-            return tuple(gt)[0]
-        else:
-            return None
-
-    else:
-        return None
-
 
 def identify_fixed_populations(allele_counts):
 
@@ -746,70 +546,4 @@ def vcf_line_to_snp_array(vcf_line_dict):
     pass
 
 
-def calc_slice_stats(data):
-    """Main function for caculating statistics.
-
-       Make it easy to add more statistics.
-    """
-
-    tabix_slice, chrm, start, stop, populations, header, min_samples = data
-
-    #progress_meter(starting_time, chrm, stop, bp_processed, total_bp_in_dataset)
-
-    if tabix_slice == None or len(tabix_slice) == 0:  # skip empty alignments
-        return None
-
-    else:
-        # Create lists to store values for final printing.
-        output_line = [chrm, start, stop]
-        total_depth = []
-        snp_wise_f_statistics = []
-        population_sizes = defaultdict(list)
-
-        Hs_est_dict = {}
-        Ht_est_dict = {}
-        snp_count = 0
-
-        for count, line in enumerate(tabix_slice):
-
-            vcf_line_dict = parse_vcf_line(line, header)
-
-            # CREATE FILTERS HERE:
-            if vcf_line_dict["FILTER"] != 'PASS':
-                continue
-
-            # COUNT SAMPLES IN EACH POPULATION
-            for pop, size in get_population_sizes(vcf_line_dict, populations).iteritems():
-                population_sizes[pop].append(size)
-
-            # CALCULATE SNPWISE F-STATISTICS
-            allele_counts = calc_allele_counts(populations, vcf_line_dict)
-            f_statistics = calc_fstats(allele_counts)
-
-            # UPDATE Hs AND Ht DICTIIONARIES
-            Hs_est_dict, Ht_est_dict = update_Hs_and_Ht_dicts(f_statistics, Hs_est_dict, Ht_est_dict)
-            f_statistics['LOCATION'] = (chrm, start, stop)
-            snp_wise_f_statistics.append(f_statistics)
-
-            total_depth.append(int(vcf_line_dict['INFO']["DP"]))
-            snp_count = count
-
-        # SUMMARIZE POPULATION WIDE STATISTICS
-        pop_size_statistics = summarize_population_sizes(population_sizes)
-        multilocus_f_statistics = calc_multilocus_f_statistics(Hs_est_dict, Ht_est_dict)
-
-        # SKIP SAMPLES WITH TOO MANY NANs
-
-        if len(multilocus_f_statistics.values()) == 0:
-            return None
-
-        elif multilocus_f_statistics.values()[0] is None:
-            return None
-
-        else:
-            # UPDATE OUTPUT LINE WITH DEPTH INFO
-            output_line += [snp_count, fstats._mean_(total_depth), fstats._stdev_(total_depth)]
-
-            return ([chrm, start, stop, snp_count, fstats._mean_(total_depth), fstats._stdev_(total_depth)], \
-                 pop_size_statistics, multilocus_f_statistics)
 
