@@ -82,7 +82,7 @@ class VCF(object):
 
         elif snp_call == '1/0' or \
                snp_call == '0/1':
-            return (1,1)
+            return (0,1)
 
         # skip multiallelic sites
         else:
@@ -293,7 +293,7 @@ class VCF(object):
 
                 cStop = cStart + self.window_size + self.step - 1
 
-    def calc_allele_counts(self, vcf_line_dict):
+    def calc_allele_counts(self, vcf_line_dict, sample_ids=None):
 
         #allele_counts = defaultdict({0:0.0,1:0.0,2:0.0,3:0.0,4:0.0})
         allele_counts = dict((key, {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}) for key in self.populations.keys())
