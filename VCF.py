@@ -175,10 +175,13 @@ class VCF(object):
                     # CONVERT STRINGS TO APPOPRIATE TYPES (INTS, FLOATS, ETC.)
                     if genotype.has_key("GQ"):
                         genotype['GQ'] = float(genotype['GQ'])
+
                     if genotype.has_key("DP"):
                         genotype['DP'] = int(genotype['DP'])
+
                     if genotype.has_key("AD"):
                         genotype['AD'] = tuple(int(ad) for ad in genotype['AD'].split(","))
+
                     if genotype.has_key("PL"):
                         genotype['PL'] = tuple(int(ad) for ad in genotype['PL'].split(","))
 
@@ -191,9 +194,13 @@ class VCF(object):
         except ValueError:
             pass
 
-        vcf_line_dict['INFO'] = parse_info_field(vcf_line_dict['INFO'])
+        vcf_line_dict['INFO'] = self.parse_info_field(vcf_line_dict['INFO'])
 
         return vcf_line_dict.copy()
+
+
+    def filter_vcf_line(self, vcf_line_dict, filters=None):
+        parse_vcf_line
 
 
     def lines_2_dicts(self, chunk):
@@ -236,11 +243,9 @@ class VCF(object):
         return chrm_lengths_dict
 
     def get_slice_indicies(self):
+        """Get slice information from VCF file that is tabix indexed (bgzipped). """
 
-        """Get slice information from VCF file that is tabix indexed file (bgzipped). """
-
-        # GENERATE SLICES
-        # current does not make overlapping slices.
+        # GENERATE SLICES:
         # Does not yield final partial slice. Not a bug!
 
         if self.region == [None]:
@@ -293,6 +298,53 @@ class VCF(object):
 
                 cStop = cStart + self.window_size + self.step - 1
 
+    def snp_chunks_interator(self, num_snv_per_chunk=3, fillvalue=None):
+
+        def grouper(iterable, n):
+            """Yields chunks of SNV of n number of SNVs.
+               Properly handles chromsome so that 
+               chunks don't overlap chromosomes."""
+
+            chrom = None
+            chunk = []
+
+            for count, i in enumerate(iterable):
+
+                s = i.split("\t")[:3]
+                current_chrom = s[0]
+
+                if count == 0:
+                    chrom = current_chrom
+
+                if current_chrom != chrom:
+                    yield chunk
+                    chunk = [i]
+                    chrom = current_chrom
+                    continue
+
+                if current_chrom == chrom:
+
+                    chunk.append(i)
+
+                    if len(chunk) >= n:
+                        yield chunk
+                        chunk = []
+
+                chrom = current_chrom
+
+        chunk_iterator = grouper(self.vcf_file_iterator(), n=num_snv_per_chunk)
+
+        for c, i in enumerate(chunk_iterator):
+
+            if len(i) == 0: # handles edge case
+                continue
+
+            if len(i) != num_snv_per_chunk:
+                padding =  num_snv_per_chunk - len(i)
+                i.extend([fillvalue]*padding)
+
+            yield i
+
     def calc_allele_counts(self, vcf_line_dict, sample_ids=None):
 
         #allele_counts = defaultdict({0:0.0,1:0.0,2:0.0,3:0.0,4:0.0})
@@ -315,226 +367,3 @@ class VCF(object):
                         allele_counts[population][allele] += 1.0
 
         return allele_counts
-
-
-def process_snp_call(snp_call, ref, alt, IUPAC_ambiguities=False):
-    """Process VCF genotype fields.
-        The current version is very basic and
-        doesn't directly take into account the
-        quality of the call or call hets with
-        IUPAC ambiguity codes."""
-
-    # IUPAC ambiguity codes
-    IUPAC_dict = {('A', 'C'): 'M',
-                  ('A', 'G'): 'R',
-                  ('A', 'T'): 'W',
-                  ('C', 'G'): 'S',
-                  ('C', 'T'): 'Y',
-                  ('G', 'T'): 'K',
-                  ('A', 'C', 'G'): 'V',
-                  ('A', 'C', 'T'): 'H',
-                  ('A', 'G', 'T'): 'D',
-                  ('C', 'G', 'T'): 'B'}
-
-    #called_base = ""
-    snp_call = snp_call.split(":")
-
-    # process blanks
-    if snp_call[0] == "./.":
-        called_base = "-"
-
-    else:
-        allele1, allele2 = snp_call[0].split("/")
-
-        # process "0/0"
-        if allele1 == '0' and allele2 == '0':
-            called_base = ref
-
-        if allele1 == '1' and allele2 == '1':
-            called_base = alt
-
-        # process "0/N"
-        if allele1 == '0' and allele2 != '0':
-
-            if IUPAC_ambiguities == False:
-                called_base = 'N'
-
-            else:
-                call = [ref] + [alt.split(',')[int(allele2) - 1]]
-                call.sort()
-                call = tuple(call)
-                called_base = IUPAC_dict[call]
-
-        # process "2/2, 1/2, etc."
-        if int(allele1) >= 1 and int(allele2) > 1:
-
-            # deal with homozygotes
-            if allele1 == allele2:
-                called_base = alt.split(',')[int(allele1) - 1]
-
-            # deal with heterozygotes
-            else:
-
-                if IUPAC_ambiguities == False:
-                    called_base = 'N'
-
-                else:
-                    ref = alt.split(',')[int(allele1) - 1]
-                    alt = alt.split(',')[int(allele2) - 1]
-                    call = [ref, alt]
-                    call.sort()
-                    call = tuple(call)
-                    called_base = IUPAC_dict[call]
-
-    return called_base
-
-
-def make_empty_vcf_ordered_dict(vcf_path):
-    """Open VCF file and read in header line as Ordered Dict"""
-
-    vcf_file = gzip.open(vcf_path, 'rb')
-    header_dict = None
-    for line in vcf_file:
-        if line.startswith("#CHROM"):
-            header = line.strip("#").strip().split()
-            header_dict = OrderedDict([(item, None) for item in header])
-            break
-
-    vcf_file.close()
-    return header_dict
-
-
-def parse_populations_list(populations):
-    populations_dict = {}
-    for pop in populations:
-        pop_name, sample_ids = pop.strip().split(":")
-        sample_ids = sample_ids.split(",")
-        populations_dict[pop_name] = sample_ids
-
-    return populations_dict
-
-
-def pairwise(iterable):
-    """Generates paris of slices from iterator
-       s -> (s0,s1), (s1,s2), (s2, s3), ..."""
-
-    a, b = itertools.tee(iterable)
-    next(b, None)
-    return itertools.izip(a, b)
-
-
-def slice_vcf(vcf_bgzipped_file, chrm, start, stop):
-
-    tbx = pysam.Tabixfile(vcf_bgzipped_file)
-
-    try:
-        vcf_slice = tbx.fetch(chrm, start, stop)
-    except ValueError:
-        return None
-
-    else:
-        return tuple(row for row in vcf_slice)
-
-
-def parse_info_field(info_field):
-
-    info_dict = {}
-    for item in info_field.split(';'):
-        pair = item.split("=")
-        if len(pair) == 2:
-            info_dict[pair[0]] = pair[1]   # this could be improved on
-    return info_dict
-
-
-def get_population_sizes(vcfline, populations):
-
-    sample_counts = {}
-
-    for pop in populations.keys():
-        sample_count = 0
-
-        for sample in populations[pop]:
-            if vcfline[sample] is not None:
-                sample_count += 1
-
-        sample_counts[pop] = sample_count
-
-    return sample_counts
-
-
-def summarize_population_sizes(dict_of_sizes):
-    results = {}
-    for pop, sizes, in dict_of_sizes.iteritems():
-        results[pop + '.sample_count.mean'] = fstats._mean_(sizes)
-        results[pop + '.sample_count.stdev'] = fstats._stdev_(sizes)
-
-    return results
-
-
-def pop_size_statistics_2_sorted_list(pop_size_statistics, order):
-
-    if len(order) == 0:
-        order = pop_size_statistics.keys()
-        order.sort()
-
-    stats = []
-    for key in order:
-        stat = pop_size_statistics[key]
-        stats.append(stat)
-
-    return (stats, order)
-
-
-def format_output(chrm, start, stop, depth, stat_id, multilocus_f_statistics):
-
-    line = ",".join((chrm, str(start), str(stop), str(depth)))
-    for pair in multilocus_f_statistics.keys():
-        if multilocus_f_statistics[pair] == None:
-            continue
-
-        if multilocus_f_statistics[pair][stat_id] == float('NaN'):
-            value = 'NA'
-
-        else:
-            value = str(multilocus_f_statistics[pair][stat_id])
-
-        line += "," + value
-
-    line += "\n"
-    return (line)
-
-
-def process_header(tabix_file):
-
-    chrm_lenghts_dict = {}
-    tabix_file = pysam.Tabixfile(tabix_file)
-
-    for line in tabix_file.header:
-
-        if line.startswith("##contig") == True:
-            chrm, length = re.split(r"<ID=|,length=", line)[1:]
-            length = int(length.strip(">"))
-            chrm_lenghts_dict[chrm] = length
-
-    return chrm_lenghts_dict
-
-def identify_fixed_populations(allele_counts):
-
-    fixed_populations_dict = {}
-    for pop in allele_counts.keys():
-        a_values = allele_counts[pop].values()
-        non_zero_a = set([a for a in a_values if a != 0])
-
-        if len(non_zero_a) == 1:
-            fixed_populations_dict[pop] = 1
-        else:
-            fixed_populations_dict[pop] = 0
-
-    return fixed_populations_dict
-
-
-def vcf_line_to_snp_array(vcf_line_dict):
-    pass
-
-
-
