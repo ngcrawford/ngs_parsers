@@ -13,7 +13,7 @@ from collections import OrderedDict, defaultdict
 
 class VCF(object):
     """docstring for VCF"""
-    def __init__(self, input, output=None, populations=None, region=None, window_size=1, step=0):
+    def __init__(self, input, output=None, populations=None, region=None, window_size=1, step=0, snvs=None):
         super(VCF, self).__init__()
 
         self.input = input
@@ -88,6 +88,80 @@ class VCF(object):
         else:
             return None
 
+
+
+    def process_snp_call(self, snp_call, ref, alt, IUPAC_ambiguities=False):
+        """Process VCF genotype fields."""
+
+        # IUPAC ambiguity codes
+        IUPAC_dict = {('A', 'C'): 'M',
+                      ('A', 'G'): 'R',
+                      ('A', 'T'): 'W',
+                      ('C', 'G'): 'S',
+                      ('C', 'T'): 'Y',
+                      ('G', 'T'): 'K',
+                      ('A', 'C', 'G'): 'V',
+                      ('A', 'C', 'T'): 'H',
+                      ('A', 'G', 'T'): 'D',
+                      ('C', 'G', 'T'): 'B'}
+
+        #called_base = ""
+
+        # process blanks
+
+        if snp_call == None:
+            called_base = "-"
+
+        if snp_call["GT"] == "./.":
+            called_base = "-"
+
+        else:
+            allele1, allele2 = snp_call["GT"].split("/")
+
+            # process "0/0"
+            if allele1 == '0' and allele2 == '0':
+                called_base = ref
+
+            if allele1 == '1' and allele2 == '1':
+                called_base = alt
+
+            # process "0/N"
+            if allele1 == '0' and allele2 != '0':
+
+                if IUPAC_ambiguities == False:
+                    called_base = 'N'
+
+                else:
+                    call = [ref] + [alt.split(',')[int(allele2) - 1]]
+                    call.sort()
+                    call = tuple(call)
+                    called_base = IUPAC_dict[call]
+
+            # process "2/2, 1/2, etc."
+            if int(allele1) >= 1 and int(allele2) > 1:
+
+                # deal with homozygotes
+                if allele1 == allele2:
+                    called_base = alt.split(',')[int(allele1) - 1]
+
+                # deal with heterozygotes
+                else:
+
+                    if IUPAC_ambiguities == False:
+                        called_base = 'N'
+
+                    else:
+                        ref = alt.split(',')[int(allele1) - 1]
+                        alt = alt.split(',')[int(allele2) - 1]
+                        call = [ref, alt]
+                        call.sort()
+                        call = tuple(call)
+                        called_base = IUPAC_dict[call]
+
+        return called_base
+
+
+
     def count_alleles(self, chunk):
 
         results = []
@@ -119,10 +193,14 @@ class VCF(object):
         else:
             return tuple(row for row in vcf_slice)
 
-    def vcf_file_iterator(self):
+    def vcf_file_iterator(self, as_dict=True):
+
         for line in self.__open_vcf__():
             if line.startswith("#") is not True:
-                yield line
+                if as_dict == True:
+                    yield self.parse_vcf_line(line, self.empty_vcf_line)
+                else:
+                    yield line
             else:
                 continue
 
@@ -201,6 +279,7 @@ class VCF(object):
 
     def filter_vcf_line(self, vcf_line_dict, filters=None):
         parse_vcf_line
+        pass
 
 
     def lines_2_dicts(self, chunk):
