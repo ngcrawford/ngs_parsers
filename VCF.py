@@ -29,10 +29,15 @@ class VCF(object):
     def __open_vcf__(self):
         """Open vcf file as gzip or as text."""
 
-        if mimetypes.guess_type(self.input)[-1] is 'gzip':
+        if type(self.input) is file:
+            fin = self.input
+
+        elif mimetypes.guess_type(self.input)[-1] is 'gzip':
             fin = gzip.open(self.input, 'rb')
+
         else:
             fin = open(self.input, 'r')
+
         return fin
 
     def _get_chrm_ids_and_sizes_(self):
@@ -40,22 +45,22 @@ class VCF(object):
             Return as dictionary"""
 
         chrms_sizes_dict = OrderedDict()
-        with self.__open_vcf__() as fin:
+        # with self.__open_vcf__() as fin:
 
-            for line in fin:
+        for line in self.__open_vcf__():
 
-                if line.startswith("##contig"):
-                    chrm_name = re.findall(r'ID=.*,', line)
-                    chrm_name = chrm_name[0].strip('ID=').strip(',')
+            if line.startswith("##contig"):
+                chrm_name = re.findall(r'ID=.*,', line)
+                chrm_name = chrm_name[0].strip('ID=').strip(',')
 
-                    chrm_length = re.findall(r'length=.*>', line)
-                    chrm_length = int(chrm_length[0].strip('length=').strip('>'))
+                chrm_length = re.findall(r'length=.*>', line)
+                chrm_length = int(chrm_length[0].strip('length=').strip('>'))
 
-                    chrms_sizes_dict[chrm_name] = chrm_length
-                    break
+                chrms_sizes_dict[chrm_name] = chrm_length
+                break
 
-                if line.startswith("#CHROM") is True:
-                    break
+            if line.startswith("#CHROM") is True:
+                break
 
         return chrms_sizes_dict
 
@@ -63,12 +68,12 @@ class VCF(object):
         """Open VCF file and read in #CHROM line as an Ordered Dict"""
 
         header_dict = None
-        with self.__open_vcf__() as fin:
-            for line in fin:
-                if line.startswith("#CHROM"):
-                    header = line.strip("#").strip().split()
-                    header_dict = OrderedDict([(item, None) for item in header])
-                    break
+
+        for line in self.__open_vcf__():
+            if line.startswith("#CHROM"):
+                header = line.strip("#").strip().split()
+                header_dict = OrderedDict([(item, None) for item in header])
+                break
 
         return header_dict
 
@@ -105,9 +110,6 @@ class VCF(object):
                       ('A', 'G', 'T'): 'D',
                       ('C', 'G', 'T'): 'B'}
 
-        #called_base = ""
-
-        # process blanks
 
         if snp_call == None:
             called_base = "-"
