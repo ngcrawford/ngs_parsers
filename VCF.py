@@ -57,7 +57,7 @@ class VCF(object):
                 chrm_length = int(chrm_length[0].strip('length=').strip('>'))
 
                 chrms_sizes_dict[chrm_name] = chrm_length
-                break
+                #break
 
             if line.startswith("#CHROM") is True:
                 break
@@ -162,8 +162,6 @@ class VCF(object):
 
         return called_base
 
-
-
     def count_alleles(self, chunk):
 
         results = []
@@ -193,7 +191,9 @@ class VCF(object):
             return ()
 
         else:
-            return tuple(row for row in vcf_slice)
+            chunk = tuple(self.parse_vcf_line(row, self.empty_vcf_line) for row in vcf_slice)
+            return ((chrm, start, stop), chunk)
+            #return tuple(row for row in vcf_slice)
 
     def vcf_file_iterator(self, as_dict=True):
 
@@ -329,10 +329,13 @@ class VCF(object):
         # GENERATE SLICES:
         # Does not yield final partial slice. Not a bug!
 
+        #print [c for c in self.chrms_2_sizes.iteritems()]
+
         if self.region == [None]:
 
             # ITERATE OVER CHROMOSOMES (USE ORDERED DICT TO KEEP IN VCF ORDER)
             for chrm, length in self.chrms_2_sizes.iteritems():
+
 
                 cStart = 0
                 cStop = 0
@@ -383,7 +386,7 @@ class VCF(object):
 
         def grouper(iterable, n):
             """Yields chunks of SNV of n number of SNVs.
-               Properly handles chromsome so that 
+               Properly handles chromsome so that
                chunks don't overlap chromosomes."""
 
             chrom = None
@@ -391,13 +394,14 @@ class VCF(object):
 
             for count, i in enumerate(iterable):
 
-                s = i.split("\t")[:3]
-                current_chrom = s[0]
+                #s = i.split("\t")[:3]
+                current_chrom = i["CHROM"]
 
                 if count == 0:
                     chrom = current_chrom
 
                 if current_chrom != chrom:
+
                     yield chunk
                     chunk = [i]
                     chrom = current_chrom
@@ -448,3 +452,10 @@ class VCF(object):
                         allele_counts[population][allele] += 1.0
 
         return allele_counts
+
+
+
+
+
+
+        
