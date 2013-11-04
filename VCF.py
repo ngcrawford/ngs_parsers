@@ -5,10 +5,9 @@ import re
 import sys
 import gzip
 import pysam
-import itertools
+#import itertools
 import mimetypes
-from pypgen.fstats import fstats
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict  #,defaultdict
 
 
 class VCF(object):
