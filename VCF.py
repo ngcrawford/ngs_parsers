@@ -171,11 +171,14 @@ class VCF(object):
     def count_alleles(self, chunk):
 
         results = []
-        for line in chunk:
+        for line in chunk:    
             pop_counts = {}
+            
             for pop in self.populations.keys():
                 allele_counts = {'REF':0, 'ALT':0}
+            
                 for sample in self.populations[pop]:
+                    
                     if line[sample] != None:
                         ref, alt = self.process_snp(line[sample]['GT'])
                         allele_counts['REF'] += ref
@@ -442,6 +445,7 @@ class VCF(object):
         allele_counts = dict((key, {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}) for key in self.populations.keys())
 
         for population in self.populations.keys():
+            
             for sample_id in self.populations[population]:
 
                 if vcf_line_dict[sample_id] != None:
