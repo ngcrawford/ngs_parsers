@@ -12,7 +12,15 @@ from collections import OrderedDict  #,defaultdict
 
 class VCF(object):
     """docstring for VCF"""
-    def __init__(self, input, output=None, populations=None, region=None, window_size=1, step=0, snvs=None):
+    def __init__(self, 
+                 input, 
+                 output=None, 
+                 populations=None, 
+                 region=None, 
+                 window_size=1, 
+                 step=0, 
+                 snvs=None):
+
         super(VCF, self).__init__()
 
         self.input = input
@@ -58,7 +66,7 @@ class VCF(object):
                 chrms_sizes_dict[chrm_name] = chrm_length
                 #break
 
-            if line.startswith("#CHROM") is True:
+            if line.startswith("##reference") is True:
                 break
 
         return chrms_sizes_dict
@@ -67,7 +75,6 @@ class VCF(object):
         """Open VCF file and read in #CHROM line as an Ordered Dict"""
 
         header_dict = None
-
         for line in self.__open_vcf__():
             if line.startswith("#CHROM"):
                 header = line.strip("#").strip().split()
