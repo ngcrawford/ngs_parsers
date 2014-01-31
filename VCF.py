@@ -12,7 +12,16 @@ from collections import OrderedDict  #,defaultdict
 
 class VCF(object):
     """docstring for VCF"""
-    def __init__(self, input, output=None, populations=None, region=None, window_size=1, step=0, snvs=None):
+    def __init__(self,
+        input, 
+        output=None,
+        populations=None,
+        region=None,
+        window_size=1,
+        step=0,
+        snvs=None,
+        outgroup=None):
+
         super(VCF, self).__init__()
 
         self.input = input
@@ -91,7 +100,6 @@ class VCF(object):
         # skip multiallelic sites
         else:
             return None
-
 
 
     def process_snp_call(self, snp_call, ref, alt, IUPAC_ambiguities=False):
