@@ -12,15 +12,15 @@ from collections import OrderedDict  #,defaultdict
 
 class VCF(object):
     """docstring for VCF"""
+
     def __init__(self,
-        input, 
-        output=None,
-        populations=None,
-        region=None,
-        window_size=1,
-        step=0,
-        snvs=None,
-        outgroup=None):
+                 input,
+                 output=None,
+                 populations=None,
+                 region=None,
+                 window_size=1,
+                 step=0,
+                 snvs=None):
 
         super(VCF, self).__init__()
 
@@ -30,7 +30,8 @@ class VCF(object):
         self.populations = populations
         self.region = region
         self.window_size = window_size
-        self.chrms_2_sizes = self._get_chrm_ids_and_sizes_()
+        self.header = self.__extract_header__()
+        self.chrms_2_sizes = self.__get_chrm_ids_and_sizes__()
         self.empty_vcf_line = self.make_empty_vcf_ordered_dict()
 
 
@@ -48,14 +49,28 @@ class VCF(object):
 
         return fin
 
-    def _get_chrm_ids_and_sizes_(self):
+    def __extract_header__(self):
+        #print [line.strip() for line in self.__open_vcf__()]
+
+        header = []
+        for line in self.__open_vcf__():
+
+            if line.startswith("#") == True:
+                header.append(line.strip())
+            else:
+                break
+
+        return header
+
+
+    def __get_chrm_ids_and_sizes__(self):
         """ Extract chromosome ids and sizes from vcf file.
             Return as dictionary"""
 
         chrms_sizes_dict = OrderedDict()
         # with self.__open_vcf__() as fin:
 
-        for line in self.__open_vcf__():
+        for line in self.header:
 
             if line.startswith("##contig"):
                 chrm_name = re.findall(r'ID=.*,', line)
@@ -67,17 +82,13 @@ class VCF(object):
                 chrms_sizes_dict[chrm_name] = chrm_length
                 #break
 
-            if line.startswith("#CHROM") is True:
-                break
-
         return chrms_sizes_dict
 
     def make_empty_vcf_ordered_dict(self):
         """Open VCF file and read in #CHROM line as an Ordered Dict"""
 
         header_dict = None
-
-        for line in self.__open_vcf__():
+        for line in self.header:
             if line.startswith("#CHROM"):
                 header = line.strip("#").strip().split()
                 header_dict = OrderedDict([(item, None) for item in header])
@@ -172,14 +183,14 @@ class VCF(object):
     def count_alleles(self, chunk):
 
         results = []
-        for line in chunk:    
+        for line in chunk:
             pop_counts = {}
-            
+
             for pop in self.populations.keys():
                 allele_counts = {'REF':0, 'ALT':0}
-            
+
                 for sample in self.populations[pop]:
-                    
+
                     if line[sample] != None:
                         ref, alt = self.process_snp(line[sample]['GT'])
                         allele_counts['REF'] += ref
@@ -246,13 +257,13 @@ class VCF(object):
         """Read in VCF line and convert it to an OrderedDict"""
 
         pos_parts = pos.strip().split()
-
         for count, item in enumerate(vcf_line_dict):
             vcf_line_dict[item] = pos_parts[count]
 
         sample_format = vcf_line_dict["FORMAT"].split(":")
 
         for count, item in enumerate(vcf_line_dict):
+
             if count >= 9:
                 genotype = vcf_line_dict[item]
 
@@ -446,7 +457,7 @@ class VCF(object):
         allele_counts = dict((key, {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}) for key in self.populations.keys())
 
         for population in self.populations.keys():
-            
+
             for sample_id in self.populations[population]:
 
                 if vcf_line_dict[sample_id] != None:
@@ -469,4 +480,4 @@ class VCF(object):
 
 
 
-        
+
