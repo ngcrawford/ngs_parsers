@@ -221,7 +221,7 @@ class VCF(object):
         for line in self.__open_vcf__():
             if line.startswith("#") is not True:
                 if as_dict == True:
-                    yield self.parse_vcf_line(line, self.empty_vcf_line)
+                    yield self.parse_vcf_line(line, self.empty_vcf_line.copy())
                 else:
                     yield line
             else:
@@ -301,7 +301,6 @@ class VCF(object):
 
 
     def filter_vcf_line(self, vcf_line_dict, filters=None):
-        parse_vcf_line
         pass
 
 
