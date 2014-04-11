@@ -9,7 +9,6 @@ import pysam
 import mimetypes
 from collections import OrderedDict  #,defaultdict
 
-
 class VCF(object):
     """docstring for VCF"""
 
@@ -128,7 +127,6 @@ class VCF(object):
                       ('A', 'G', 'T'): 'D',
                       ('C', 'G', 'T'): 'B'}
 
-
         if snp_call == None:
             called_base = "-"
 
@@ -202,18 +200,19 @@ class VCF(object):
 
         return results
 
-    def slice_vcf(self, vcf_bgzipped_file, chrm, start, stop):
+    def vcf_slice_iterator(self, vcf_bgzipped_file, region):
 
         tbx = pysam.Tabixfile(vcf_bgzipped_file)
 
         try:
-            vcf_slice = tbx.fetch(chrm, start, stop)
+            vcf_slice = tbx.fetch(*region)
         except ValueError:
-            return ()
-
+            print 'bad vcf slice:', region
+            sys.exit()
         else:
-            chunk = tuple(self.parse_vcf_line(row, self.empty_vcf_line) for row in vcf_slice)
-            return ((chrm, start, stop), chunk)
+            for row in vcf_slice:
+                yield self.parse_vcf_line(row, self.empty_vcf_line)
+            #return ((chrm, start, stop), chunk)
             #return tuple(row for row in vcf_slice)
 
     def vcf_file_iterator(self, as_dict=True):
@@ -298,11 +297,6 @@ class VCF(object):
         vcf_line_dict['INFO'] = self.parse_info_field(vcf_line_dict['INFO'])
 
         return vcf_line_dict.copy()
-
-
-    def filter_vcf_line(self, vcf_line_dict, filters=None):
-        pass
-
 
     def lines_2_dicts(self, chunk):
 
