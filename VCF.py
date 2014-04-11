@@ -209,6 +209,7 @@ class VCF(object):
         except ValueError:
             print 'bad vcf slice:', region
             sys.exit()
+
         else:
             for row in vcf_slice:
                 yield self.parse_vcf_line(row, self.empty_vcf_line)
