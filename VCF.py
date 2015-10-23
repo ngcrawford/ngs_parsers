@@ -19,7 +19,8 @@ class VCF(object):
                  region=None,
                  window_size=1,
                  step=0,
-                 snvs=None):
+                 snvs=None,
+                 empty_vcf_line=None):
 
         super(VCF, self).__init__()
 
@@ -79,7 +80,7 @@ class VCF(object):
                 chrm_length = int(chrm_length[0].strip('length=').strip('>'))
 
                 chrms_sizes_dict[chrm_name] = chrm_length
-                #break
+                break
 
         return chrms_sizes_dict
 
@@ -237,14 +238,14 @@ class VCF(object):
 
         return info_dict
 
-    def get_population_sizes(self, vcfline, populations):
+    def get_population_sizes(self, vcfline):
 
         sample_counts = {}
 
-        for pop in populations.keys():
+        for pop in self.populations.keys():
             sample_count = 0
 
-            for sample in populations[pop]:
+            for sample in self.populations[pop]:
                 if vcfline[sample] is not None:
                     sample_count += 1
 
@@ -267,7 +268,7 @@ class VCF(object):
             if count >= 9:
                 genotype = vcf_line_dict[item]
 
-                if  "./." in genotype or genotype == ".":      # "'./.'' for dip, '.' for haploid
+                if  "./." in genotype or ".|." in genotype or genotype == ".":      # "'./.'' for dip, '.' for haploid
                     vcf_line_dict[item] = None
 
                 else:
@@ -469,6 +470,37 @@ class VCF(object):
 
         return allele_counts
 
+
+    def calc_heterozygosity(self, vcf_line_dict, sample_ids=None):
+
+        heterozygosity = dict((key, 0) for key in self.populations.keys())
+
+        for population in self.populations.keys():
+
+            het_count = 0.0
+            total_samples = 0.0
+            for sample_id in self.populations[population]:
+
+                if vcf_line_dict[sample_id] != None:
+
+                    genotype = vcf_line_dict[sample_id]
+                    genotype = genotype["GT"].split("/")   # TODO add phased logic
+
+                    if genotype == [".", "."]:
+                        continue
+
+                    genotype = map(int, genotype)
+
+                    if genotype[0] != genotype[1]:
+                        het_count += 1
+
+                    total_samples +=1
+            try:
+                heterozygosity[population] = het_count / total_samples
+            except:
+                heterozygosity[population] = 0.0
+
+        return heterozygosity
 
 
 
